@@ -1,11 +1,11 @@
-# Shared State Results Canvas
+# Shared State Results Canvas + 3D Globe
 
 **Date:** 2026-04-25
-**Approach:** useCoAgent shared state (Approach A)
+**Approach:** useCoAgent shared state (Approach A) + three-globe WebGL canvas
 
 ## Goal
 
-Replace the current `useRenderToolCall` sidebar rendering with a main-area results canvas that accumulates flight and date search results in real-time via `ag_ui_adk` shared state. The sidebar remains for chat; the canvas grows as the user searches.
+Replace the current `useRenderToolCall` sidebar rendering with a main-area canvas featuring a full-bleed 3D globe (`three-globe`) that draws arcs for each searched flight path, plus a scrollable overlay panel of result cards. State flows from the ADK agent via `ag_ui_adk` shared state. The sidebar remains for chat.
 
 ## Architecture
 
@@ -77,48 +77,87 @@ export interface AgentState {
 - Remove both `useRenderToolCall` calls
 - Conditionally render: if state has any results → `<ResultsCanvas state={state} />`; otherwise → existing hero markup
 
+### `GlobeCanvas` (`src/components/globe-canvas.tsx`)
+
+Full-bleed WebGL globe using `three-globe`. Receives `arcs: ArcDatum[]` derived from agent state.
+
+**Library:** `react-globe.gl` (React wrapper around `three-globe`; handles Three.js setup internally). The component is client-only (`"use client"`, dynamic import with `ssr: false` since it requires `window`).
+
+**Airport coordinate table** (`src/lib/airports.ts`): static lookup of IATA code → `{ lat, lng }` for the airports referenced in the agent's suggestions: SEA, SFO, LAX, LAS, DEN, ORD, JFK, PDX, PHX, BOI, YVR, plus any destination seen in results that can be resolved. Unknown codes fall back gracefully (arc not drawn).
+
+**Arc data shape:**
+```typescript
+interface ArcDatum {
+  startLat: number; startLng: number;
+  endLat: number;   endLng: number;
+  color: string;    // amber (#F59E0B) for latest, muted white for older
+  id: string;
+}
+```
+
+**Globe appearance:**
+- Dark globe texture (night-side Earth or stylized dark map via `three-globe`'s built-in textures)
+- Background: same `var(--bg)` dark color as the rest of the UI
+- Auto-rotates slowly (`0.1°/frame`) on Y axis; rotation pauses for 3s when new arcs arrive then resumes
+- Arc altitude: `0.3` (gentle curve over the Pacific/continent)
+- Latest arc: amber (`#F59E0B`), stroke width `1.5`, opacity `1.0`
+- Older arcs: `rgba(255,255,255,0.25)`, stroke width `0.8`
+- SEA origin dot: amber point always visible
+
+**Sizing:** The globe container is `position: absolute; inset: 0` inside `ResultsCanvas`'s wrapper, which is `position: relative; width: 100%; height: 100vh`.
+
 ### `ResultsCanvas` (`src/components/results-canvas.tsx`)
 
-Receives `AgentState`. Merges `flight_results` and `date_results` into a single list sorted by `ts` descending (newest first). The entry with the highest `ts` is the "latest".
+Outer wrapper: `position: relative; width: 100%; height: 100vh; overflow: hidden`.
 
-Rendering per card:
-- **Latest card**: full opacity, 2px amber left border, normal weight header
+Contains:
+1. `<GlobeCanvas arcs={arcs} />` — absolute fill layer behind
+2. Overlay panel — `position: absolute; top: 2rem; right: 2rem; width: 380px; max-height: calc(100vh - 4rem); overflow-y: auto`
+
+**Overlay panel** receives merged results sorted by `ts` descending:
+- **Latest card**: full opacity, 2px amber left border
 - **Older cards**: 50% opacity, no accent border
 
-Each flight result card shows:
-- Header: `SEA → {DEST}  •  {departure_date}` (or date range)
-- List of up to 5 flights: airline, price, duration, stops
-- If no direct flights, label the cheapest with stops
+Each flight result card:
+- Header: `SEA → {DEST}  •  {departure_date}`
+- Up to 5 flights: airline, price, duration, stops
 
-Each date result card shows:
+Each date result card:
 - Header: `SEA → {DEST}  •  cheapest dates`
-- List of date options with price
+- Date options with price
 
-Layout: single scrollable column, `gap: 1.5rem`, same dark background as existing canvas. Cards use the existing glassmorphic card style from `flight-card.tsx`.
+Cards reuse the existing glassmorphic style from `flight-card.tsx`.
+
+**Before any results:** `ResultsCanvas` is not mounted; the existing hero markup renders instead (no globe shown on initial load — keeps first impression clean).
 
 ### Hero transition
 
-The hero `<div>` inside `CopilotSidebar` is conditionally rendered only when `!state.flight_results?.length && !state.date_results?.length`. No animation needed — the state arrival itself causes the re-render.
+`page.tsx` renders the existing hero when `!hasResults`, otherwise renders `<ResultsCanvas>`. `hasResults = !!(state.flight_results?.length || state.date_results?.length)`. No animation — state arrival causes the swap.
 
 ## Scope
 
 **In scope:**
 - Accumulating results in session state via `after_tool_callback`
-- `ResultsCanvas` rendering flight and date cards in main area
-- Dimming older results
+- `GlobeCanvas` with `react-globe.gl` — full-bleed, arcs per searched route
+- `ResultsCanvas` overlay panel with flight/date cards, newest highlighted
+- Dimming older results and arcs
 - Removing `useRenderToolCall` from sidebar
 
 **Out of scope:**
-- Clearing results (reset button, new session)
+- Clearing results / reset button
 - Persisting results across page refresh (in-memory sessions only)
-- Streaming partial results mid-tool-call (state updates only on run end via STATE_SNAPSHOT)
-- Animations or transitions on card entry
+- Streaming partial results mid-tool-call (state updates on run end via STATE_SNAPSHOT only)
+- Click-to-zoom on globe arcs
+- Airports not in the static lookup table (arcs silently skipped)
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `agent/main.py` | Add `after_tool_callback` function, pass to `LlmAgent` |
-| `src/lib/types.ts` | Add `AgentState`, `StoredFlightResult`, `StoredDateResult` |
+| `agent/main.py` | Add `after_tool_callback`, pass to `LlmAgent` |
+| `src/lib/types.ts` | Add `AgentState`, `StoredFlightResult`, `StoredDateResult`, `ArcDatum` |
+| `src/lib/airports.ts` | New — static IATA → `{ lat, lng }` lookup table |
 | `src/app/page.tsx` | Add `useCoAgent`, remove `useRenderToolCall`, render `<ResultsCanvas>` |
-| `src/components/results-canvas.tsx` | New component |
+| `src/components/globe-canvas.tsx` | New — `react-globe.gl` wrapper, client-only |
+| `src/components/results-canvas.tsx` | New — globe + overlay panel composition |
+| `package.json` / lockfile | Add `react-globe.gl` dependency |
