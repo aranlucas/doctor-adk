@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Space_Mono, Cormorant_Garamond } from "next/font/google";
-import { CopilotProvider } from "@/components/CopilotProvider";
 import "./globals.css";
 import "@copilotkit/react-core/v2/styles.css";
 
@@ -29,9 +28,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${spaceMono.variable} ${cormorant.variable}`}>
-      <body className="antialiased">
-        <CopilotProvider>{children}</CopilotProvider>
-      </body>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }
