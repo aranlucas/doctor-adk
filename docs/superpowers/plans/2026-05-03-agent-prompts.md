@@ -745,3 +745,30 @@ git commit -m "feat(agents): sharpen sub-agent instructions with result-conditio
 - [x] Tests fail before implementation, pass after ✓
 - [x] Type names consistent: `ExploreDestinationsArgs` used in Task 1, 2, 3, 4 ✓
 - [x] `exploreDestinationsSummary` defined in Task 3, called in Task 3 ✓
+
+---
+
+## Addendum: Full Summary Audit (2026-05-03)
+
+**Context:** `shared_after_tool_callback` strips `structuredContent` from all tool responses — agents only see the text `content`. Summaries that show only 1 result prevent agents from reasoning about options.
+
+**Audit result — already rich (no change needed):**
+- `buildWeatherSummary` — full daily forecast ✓
+- `buildVisaSummary` — status, max stay, notes ✓
+- `buildBaggageSummaryOne/All` — full per-airline tables ✓
+- `buildTripWindowSummary` — lists all windows ✓
+- `buildGroundRouteSummary` — top 10 with legs ✓
+- `buildRouteSummary` — top 10 multi-modal ✓
+- `buildAccomHacksSummary` — all hacks with savings ✓
+- `multiCitySummary`, `suggestDatesSummary`, `destinationSummary` ✓
+
+**Improved (commit `9f09606`):**
+- `flightSummary` → top 5 with price, airline, stops, duration, baggage indicators
+- `hotelSummary` → top 5 with price, rating, stars, neighborhood, cross-provider savings
+- `loungeSummary` → each lounge listed with name, terminal, hours, access cards
+- `localEventsSummary` → top 5 with name, date/time, venue, price range
+- `nearbyPlacesSummary` → top 5 rated places with rating, category, distance
+- `restaurantSummary` → top 5 with rating, cuisine, price level, insider tip
+- `optimizeTripDatesSummary` → top 5 date options with flight+hotel breakdown
+- `handleDetectTravelHacks` → all hacks listed with savings and description
+- `formatFindSummary` (find_interactive) → top 5 bundles with route, stops, duration
