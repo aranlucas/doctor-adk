@@ -154,23 +154,71 @@ func exploreDestinationsSummary(result *models.ExploreResult, origin string) str
 		return fmt.Sprintf("No destinations found from %s.", origin)
 	}
 
-	parts := []string{fmt.Sprintf("Found %d destinations from %s", result.Count, origin)}
+	lines := []string{fmt.Sprintf("Found %d destinations from %s. Top options:", result.Count, origin)}
 
-	if len(result.Destinations) > 0 {
-		d := result.Destinations[0]
+	max := 10
+	if len(result.Destinations) < max {
+		max = len(result.Destinations)
+	}
+	for i, d := range result.Destinations[:max] {
 		dest := d.CityName
 		if dest == "" {
 			dest = d.AirportCode
 		}
-		parts = append(parts, fmt.Sprintf("Cheapest: %s (%s) from %.0f (local currency, %s, %d stop(s))",
-			dest, d.AirportCode, d.Price, d.AirlineName, d.Stops))
+		stops := "nonstop"
+		if d.Stops == 1 {
+			stops = "1 stop"
+		} else if d.Stops > 1 {
+			stops = fmt.Sprintf("%d stops", d.Stops)
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s (%s) from USD %.0f — %s, %s",
+			i+1, dest, d.AirportCode, d.Price, d.AirlineName, stops))
+	}
+	if result.Count > 10 {
+		lines = append(lines, fmt.Sprintf("... and %d more destinations available.", result.Count-10))
 	}
 
-	return strings.Join(parts, ". ") + "."
+	return strings.Join(lines, "\n")
 }
 ```
 
-- [ ] **Step 3: Verify it compiles**
+- [ ] **Step 3: Update existing `weekendSummary` to show top 5 destinations**
+
+The existing `weekendSummary` function only shows 1 destination. Since `utils.py` strips `structuredContent` and the agent only sees text, replace it with a version that lists top 5:
+
+Find the existing `weekendSummary` function (around line 107) and replace it with:
+
+```go
+func weekendSummary(result *trip.WeekendResult) string {
+	if !result.Success || result.Count == 0 {
+		if result.Error != "" {
+			return fmt.Sprintf("Weekend getaway search failed: %s", result.Error)
+		}
+		return "No weekend getaway destinations found."
+	}
+
+	lines := []string{
+		fmt.Sprintf("Found %d weekend getaway destinations from %s (%s to %s, %d nights). Top options:",
+			result.Count, result.Origin, result.DepartureDate, result.ReturnDate, result.Nights),
+	}
+
+	max := 5
+	if len(result.Destinations) < max {
+		max = len(result.Destinations)
+	}
+	for i, d := range result.Destinations[:max] {
+		lines = append(lines, fmt.Sprintf("%d. %s (%s) — USD %.0f total (flight %.0f + hotel est. %.0f)",
+			i+1, d.Destination, d.AirportCode, d.Total, d.FlightPrice, d.HotelPrice))
+	}
+	if result.Count > 5 {
+		lines = append(lines, fmt.Sprintf("... and %d more destinations available.", result.Count-5))
+	}
+
+	return strings.Join(lines, "\n")
+}
+```
+
+- [ ] **Step 4: Verify it compiles**
 
 ```bash
 cd ~/Projects/trvl && go build ./mcp/
